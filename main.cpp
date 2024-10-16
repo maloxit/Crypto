@@ -24,6 +24,23 @@ using uint64 = unsigned long long;
 using uchar = unsigned char;
 using StringFilter = float (*)(uchar* in, int len);
 
+template<typename T>
+struct triplet
+{
+    T val[3];
+    triplet() {
+        val[0] = 0;
+        val[1] = 0;
+        val[2] = 0;
+    };
+    triplet(T v0, T v1, T v2) {
+        val[0] = v0;
+        val[1] = v1;
+        val[2] = v2;
+    };
+
+};
+
 struct Node;
 
 struct Node
@@ -65,7 +82,7 @@ bool IsDigit(uchar c) {
 }
 
 
-const uchar allowed_chars[] = " .,-;:?!0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const uchar allowed_chars[] = " .,-;:?!\'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 //const uchar allowed_chars[] = " .,!?0123456789‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ¿¡¬√ƒ≈∆«»… ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ";
 
 class Test
@@ -202,8 +219,10 @@ class Test
     }
 
 
-    float MainFilter(uchar* in, int len) {
+    float MainFilter(uchar* in, int len, bool& filtered) {
+        filtered = false;
         if (len < 2) {
+            filtered = true;
             return 0.f;
         }
         float biAvrg = 1.f;
@@ -212,11 +231,12 @@ class Test
             for (int i = 0; i + 1 < len; ++i) {
                 float ret = kurnel2(in + i);
                 if (ret == 0.f) {
+                    filtered = true;
                     return 0.f;
                 }
                 biSum += ret;
             }
-            biAvrg = biSum / (len - 1);
+            biAvrg = biSum;
         }
 
         float triAvrg = 1.f;
@@ -225,11 +245,12 @@ class Test
             for (int i = 0; i + 2 < len; ++i) {
                 float ret = kurnel3(in + i);
                 if (ret == 0.f) {
+                    filtered = true;
                     return 0.f;
                 }
                 triSum += ret;
             }
-            triAvrg = triSum / (len - 2);
+            triAvrg = triSum;
         }
 
 
@@ -251,21 +272,39 @@ class Test
             int end = i;
             int len = end - start;
             if (len > 0) {
+                float m = 1;
+
                 if (isWordStart && isWordEnd) {
-                    if (!IsWord(in + start, len))
-                        return 0.f;
+                    if (IsWord(in + start, len)) {
+                        m = 2;
+                    }
+                    else {
+                        m = -1;
+                    }
                 }
                 else if (isWordStart) {
-                    if (!IsWordStart(in + start, len))
-                        return 0.f;
+                    if (!IsWordStart(in + start, len)) {
+                        m = 1;
+                    }
+                    else {
+                        m = -1;
+                    }
                 }
                 else if (isWordEnd) {
-                    if (!IsWordEnd(in + start, len))
-                        return 0.f;
+                    if (!IsWordEnd(in + start, len)) {
+                        m = 1;
+                    }
+                    else {
+                        m = -1;
+                    }
                 }
                 else {
-                    if (!IsWordPart(in + start, len))
-                        return 0.f;
+                    if (!IsWordPart(in + start, len)) {
+                        m = 1;
+                    }
+                    else {
+                        m = -1;
+                    }
                 }
                 wordParts += end - start;
             }
@@ -280,57 +319,62 @@ class Test
     uint64 masks[256];
     std::vector<Node> nodes;
     std::vector<Node> nodesRev;
-    std::vector<uchar> code1;
-    std::vector<uchar> code2;
+    std::vector<uchar> codes[3];
     std::vector<std::pair<uchar, uchar>> table[256];
-    std::vector<uint64> allowedChars;
-    std::vector<uchar> helper;
+    std::vector < std::vector<triplet<uchar>>> tableBig;
+    std::vector<uint64> allowedChars[3];
+    std::vector<uchar> helpers[3];
+    std::vector<triplet<uint>> typeMasks;
 
 
-    std::vector<uint> posibleCount1;
-    std::vector<uint> posibleCount2;
-    std::vector<uchar> text1, text2;
+    std::vector<uint> posibleCounts[3];
+    std::vector<uchar> texts[3];
 
     struct WordRecord {
-        std::vector<uchar> word;
-        std::vector<uchar> mirror;
+        std::vector<uchar> words[3];
         uint len;
         float score;
     };
 
-    int printRec(std::vector<WordRecord>* pWords, bool start, bool caps, int depthLeft, uchar* tmp, uchar* tmpMirror, int tmpPos, int nodePos, std::vector<uchar>& text, int pos) {
-        if (depthLeft == 0 || nodePos < 0 || pos >= text.size()) {
+    int printRec(std::vector<WordRecord>* pWords, bool start, bool caps, int depthLeft, std::vector<uchar>* tmps, int tmpPos, int nodePos, int textIdx, int pos) {
+        if (depthLeft == 0 || nodePos < 0 || pos >= texts[textIdx].size()) {
             return 0;
         }
         int count = 0;
         while (nodePos >= 0) {
             if (nodes[nodePos].c == '\0') {
-                float res = MainFilter(tmpMirror, tmpPos);
-                if (res != 0) {
+                float res = 0;
+                bool filtered = false;
+                for (int i = 0; i < 3 && !filtered; ++i) {
+                    res += MainFilter(tmps[(textIdx + i) % 3].data(), tmpPos, filtered);
+                }
+                if (!filtered) {
                     if (pWords) {
                         uint wordIdx = pWords->size();
                         pWords->push_back({});
                         WordRecord& word = (*pWords)[wordIdx];
                         word.len = tmpPos;
                         word.score = res;
-                        word.word.resize(tmpPos);
-                        word.mirror.resize(tmpPos);
-                        memcpy(word.word.data(), tmp, tmpPos);
-                        memcpy(word.mirror.data(), tmpMirror, tmpPos);
+                        for (int i = 0; i < 3; ++i) {
+                            word.words[i].resize(tmpPos);
+                            memcpy(word.words[i].data(), tmps[i].data(), tmpPos);
+                        }
                     }
                     count++;
                 }
             }
-            if (!caps && ((allowedChars[pos] & masks[nodes[nodePos].c]) != 0) && (text[pos] == '*' || text[pos] == '%' || text[pos] == nodes[nodePos].c)) {
-                tmp[tmpPos] = nodes[nodePos].c;
-                tmpMirror[tmpPos] = nodes[nodePos].c ^ helper[pos];
-                count += printRec(pWords, false, false, depthLeft - 1, tmp, tmpMirror, tmpPos + 1, nodes[nodePos].down, text, pos + 1);
+            if (!caps && ((allowedChars[textIdx][pos] & masks[nodes[nodePos].c]) != 0) && (texts[textIdx][pos] == '*' || texts[textIdx][pos] == '%' || texts[textIdx][pos] == nodes[nodePos].c)) {
+                tmps[textIdx][tmpPos] = nodes[nodePos].c;
+                tmps[(textIdx + 1) % 3][tmpPos] = nodes[nodePos].c ^ helpers[textIdx][pos];
+                tmps[(textIdx + 2) % 3][tmpPos] = nodes[nodePos].c ^ helpers[(textIdx + 2) % 3][pos];
+                count += printRec(pWords, false, false, depthLeft - 1, tmps, tmpPos + 1, nodes[nodePos].down, textIdx, pos + 1);
             }
             uchar C = ToUpper(nodes[nodePos].c);
-            if ((caps || start) && ((allowedChars[pos] & masks[C]) != 0) && (text[pos] == '*' || text[pos] == '%' || text[pos] == C)) {
-                tmp[tmpPos] = C;
-                tmpMirror[tmpPos] = C ^ helper[pos];
-                count += printRec(pWords, false, caps, depthLeft - 1, tmp, tmpMirror, tmpPos + 1, nodes[nodePos].down, text, pos + 1);
+            if ((caps || start) && ((allowedChars[textIdx][pos] & masks[C]) != 0) && (texts[textIdx][pos] == '*' || texts[textIdx][pos] == '%' || texts[textIdx][pos] == C)) {
+                tmps[textIdx][tmpPos] = C;
+                tmps[(textIdx + 1) % 3][tmpPos] = C ^ helpers[textIdx][pos];
+                tmps[(textIdx + 2) % 3][tmpPos] = C ^ helpers[(textIdx + 2) % 3][pos];
+                count += printRec(pWords, false, caps, depthLeft - 1, tmps, tmpPos + 1, nodes[nodePos].down, textIdx, pos + 1);
             }
             nodePos = nodes[nodePos].next;
         }
@@ -338,63 +382,74 @@ class Test
     }
 
     void recalcPosibleCount(uint start, uint end) {
-        std::vector<uchar> tmp;
-        std::vector<uchar> tmpMirror;
-        tmp.resize(100);
-        tmpMirror.resize(100);
-        for (int i = start; i < end && i < posibleCount1.size(); ++i) {
-            posibleCount1[i] = printRec(nullptr, true, false, 100, tmp.data(), tmpMirror.data(), 0, 1, text1, i);
-            posibleCount1[i] += printRec(nullptr, true, true, 100, tmp.data(), tmpMirror.data(), 0, 1, text1, i);
-            posibleCount2[i] = printRec(nullptr, true, true, 100, tmp.data(), tmpMirror.data(), 0, 1, text2, i);
-            posibleCount2[i] += printRec(nullptr, true, false, 100, tmp.data(), tmpMirror.data(), 0, 1, text2, i);
+        std::vector<uchar> tmps[3];
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            tmps[textIdx].resize(100);
+        }
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            for (int i = start; i < end && i < posibleCounts[textIdx].size(); ++i) {
+                posibleCounts[textIdx][i] = printRec(nullptr, true, false, 100, tmps, 0, 1, textIdx, i);
+                posibleCounts[textIdx][i] += printRec(nullptr, true, true, 100, tmps, 0, 1, textIdx, i);
+            }
         }
 
     }
 
     void printState(int windowStart, int windowEnd, int pos) {
         printf("pos: %6d\n", pos);
-        for (int i = windowStart; i < windowEnd; ++i) {
-            printf("%6d ", posibleCount1[i]);
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            for (int i = windowStart; i < windowEnd; ++i) {
+                printf("%4d ", posibleCounts[textIdx][i]);
+            }
+            printf("\n");
+            for (int i = windowStart; i < windowEnd; ++i) {
+                if (texts[textIdx][i] != '*') {
+                    printf("  %c  ", texts[textIdx][i]);
+                }
+                else {
+                    printf("[");
+                    uint cross = helpers[0][i] + 256 * (helpers[1][i] + 256 * helpers[2][i]);
+                    uint mask = typeMasks[cross].val[textIdx];
+                    printf("%c", (mask & 0x1) > 0 ? 'L' : ' ');
+                    printf("%c", (mask & 0x2) > 0 ? 'U' : ' ');
+                    printf("%c", (mask & 0x4) > 0 ? 'S' : ' ');
+                    printf("]");
+                }
+
+            }
+            printf("\n");
         }
         printf("\n");
         for (int i = windowStart; i < windowEnd; ++i) {
-            printf("   %c   ", text1[i]);
+            uint cross = helpers[0][i] + 256 * (helpers[1][i] + 256 * helpers[2][i]);
+            const auto& vars = tableBig[cross];
+            printf((cross == 0 ? "  #  " : "%4d "), int(vars.size()));
         }
         printf("\n");
         for (int i = windowStart; i < windowEnd; ++i) {
-            uchar cross = helper[i];
-            const auto& vars = table[cross];
-            printf((cross == 0 ? "   #   " : "%6d "), int(vars.size()));
-        }
-        printf("\n");
-        for (int i = windowStart; i < windowEnd; ++i) {
-            printf("   %c   ", text2[i]);
-        }
-        printf("\n");
-        for (int i = windowStart; i < windowEnd; ++i) {
-            printf("%6d ", posibleCount2[i]);
-        }
-        printf("\n");
-        for (int i = windowStart; i < windowEnd; ++i) {
-            printf(i == pos ? "   ^   " : "       ");
+            printf(i == pos ? "  ^  " : "     ");
         }
         printf("\n");
         printf("\n");
 
-        uchar cross = helper[pos];
-        const auto& vars = table[cross];
+        uint cross = helpers[0][pos] + 256 * (helpers[1][pos] + 256 * helpers[2][pos]);
+        const auto& vars = tableBig[cross];
 
         printf("cross = ");
-        for (int j = 7; j > 0; --j) {
+        for (int j = 23; j >= 0; --j) {
             printf("%d", (uchar)((cross) >> j) & 0x1);
         }
         printf("\n");
         printf("\n");
 
+        const uint maxLen = 20;
 
-        for (int i = 0; i < vars.size(); ++i) {
-            auto pair = vars[i];
-            printf("%2d (%c,%c); %2d (%c,%c);\n", i, pair.first, pair.second, i + vars.size(), pair.second, pair.first);
+        for (int i = 0; i < vars.size() && i < maxLen; ++i) {
+            for (int j = i; j < vars.size(); j += maxLen) {
+                auto triplet = vars[j];
+                printf("%2d (%c,%c,%c); ", j, triplet.val[0], triplet.val[1], triplet.val[2]);
+            }
+            printf("\n");
         }
         printf("\n");
     }
@@ -460,7 +515,7 @@ class Test
 
             fread(tmp.data(), sizeof(uchar), sz, in);
             fclose(in);
-            macaron::Base64::Decode(tmp, code1);
+            macaron::Base64::Decode(tmp, codes[0]);
         }
         {
             FILE* in = fopen("./input2.txt", "r");
@@ -472,22 +527,49 @@ class Test
 
             fread(tmp.data(), sizeof(uchar), sz, in);
             fclose(in);
-            macaron::Base64::Decode(tmp, code2);
+            macaron::Base64::Decode(tmp, codes[1]);
+        }
+        {
+            FILE* in = fopen("./input3.txt", "r");
+            fseek(in, 0L, SEEK_END);
+            long sz = ftell(in);
+            fseek(in, 0L, SEEK_SET);
+            std::vector<uchar> tmp;
+            tmp.resize(sz);
+
+            fread(tmp.data(), sizeof(uchar), sz, in);
+            fclose(in);
+            macaron::Base64::Decode(tmp, codes[2]);
         }
 
         for (int first = 0; first < sizeof(allowed_chars) - 1; ++first) {
 
-            for (int second = first; second < sizeof(allowed_chars) - 1; ++second) {
+            for (int second = 0; second < sizeof(allowed_chars) - 1; ++second) {
                 uchar val = allowed_chars[first] ^ allowed_chars[second];
                 table[val].push_back({ allowed_chars[first], allowed_chars[second] });
             }
         }
+        tableBig.resize(256 * 256 * 256);
+        for (int first = 0; first < sizeof(allowed_chars) - 1; ++first) {
 
-        helper.resize(code1.size());
-        for (int i = 0; i < code1.size(); ++i) {
-            helper[i] = code1[i] ^ code2[i];
+            for (int second = 0; second < sizeof(allowed_chars) - 1; ++second) {
+                for (int third = 0; third < sizeof(allowed_chars) - 1; ++third) {
+                    uint val12 = allowed_chars[first] ^ allowed_chars[second];
+                    uint val23 = allowed_chars[second] ^ allowed_chars[third];
+                    uint val31 = allowed_chars[third] ^ allowed_chars[first];
+                    uint cross = val12 + 256 * (val23 + 256 * val31);
+                    tableBig[cross].push_back({ allowed_chars[first], allowed_chars[second], allowed_chars[third] });
+                }
+            }
         }
-        /*
+
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            helpers[textIdx].resize(codes[textIdx].size());
+            for (int i = 0; i < codes[textIdx].size(); ++i) {
+                helpers[textIdx][i] = codes[textIdx][i] ^ codes[(textIdx + 1) % 3][i];
+            }
+        }
+        if (false) {
             printf("\n");
             for (int i = 0; i < 256; ++i) {
                 printf("%02X = %2d: ", i, (int)table[i].size());
@@ -496,7 +578,19 @@ class Test
                 }
                 printf("\n");
             }
-        */
+            getchar();
+            printf("\n");
+            for (int i = 0; i < 256 * 256 * 256; ++i) {
+                if (tableBig[i].size() > 0) {
+                    printf("%06X = %6d: ", i, (int)tableBig[i].size());
+                    for (auto triplet : tableBig[i]) {
+                        printf("(%c,%c,%c)", triplet.val[0], triplet.val[1], triplet.val[2]);
+                    }
+                    printf("\n");
+                }
+            }
+            getchar();
+        }
         for (int i = 0; i < 256; ++i) masks[i] = 0;
         {
             masks['a'] = 0x0000000000000001;
@@ -556,43 +650,117 @@ class Test
             masks['Y'] = 0x0100000000000000;
             masks['Z'] = 0x0200000000000000;
         }
-        allowedChars.resize(code1.size());
-        for (int i = 0; i < code1.size(); ++i) {
-            allowedChars[i] = 0;
-            uchar cross = helper[i];
-            const auto& vars = table[cross];
-            for (auto pair : vars) {
-                allowedChars[i] |= masks[pair.first] | masks[pair.second];
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            allowedChars[textIdx].resize(codes[textIdx].size());
+        }
+        for (int i = 0; i < codes[0].size(); ++i) {
+            for (int textIdx = 0; textIdx < 3; ++textIdx) {
+                allowedChars[textIdx][i] = 0;
+            }
+            uint cross = helpers[0][i] + 256 * (helpers[1][i] + 256 * helpers[2][i]);
+            const auto& vars = tableBig[cross];
+            for (auto triplet : vars) {
+                allowedChars[0][i] |= masks[triplet.val[0]];
+                allowedChars[1][i] |= masks[triplet.val[1]];
+                allowedChars[2][i] |= masks[triplet.val[2]];
             }
         }
 
-        text1.resize(code1.size());
-        text2.resize(code1.size());
-        for (int i = 0; i < code1.size(); ++i) {
-            if (helper[i] < 64) {
-                text1[i] = text2[i] = '%';
-            }
-            else {
-                text1[i] = text2[i] = '*';
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            texts[textIdx].resize(codes[textIdx].size());
+            for (int i = 0; i < codes[textIdx].size(); ++i) {
+                texts[textIdx][i] = '*';
             }
         }
 
-        /*  // Load chackpoint
-            uchar checkPoint[] = "Chapter 1 An Empty Road The Wheel of Time turns, and Ages come and pass, leaving memories that become legend. Legend fades to myth, and even myth is long forgotten when the Age that gave it birth comes again. In one Age, called the Third Age by some, an Age yet to come, an Age long past, a wind rose in the Mountains of Mist. The wind was not the beginning. There are neither beginnings nor endings to the turning of the Wheel of Time. But it was a beginning.";
-            for (int i = 0; i < sizeof(checkPoint) - 1; ++i) {
-                text1[i] = checkPoint[i];
-                text2[i] = checkPoint[i] ^ helper[i];
+        std::vector<uchar> checkPoint;
+        {
+            FILE* in = fopen("./checkPoint2.txt", "rb");
+            fseek(in, 0L, SEEK_END);
+            long sz = ftell(in);
+            fseek(in, 0L, SEEK_SET);
+            checkPoint.resize(sz);
+
+            fread(checkPoint.data(), sizeof(uchar), sz, in);
+            fclose(in);
+        }
+        // Load chackpoint
+        for (int i = 0; i < checkPoint.size() && i < codes[0].size(); ++i) {
+            if (checkPoint[i] != '*') {
+                texts[2][i] = checkPoint[i];
+                texts[0][i] = checkPoint[i] ^ helpers[2][i];
+                texts[1][i] = checkPoint[i] ^ helpers[1][i];
             }
-        */
-        posibleCount1.resize(code1.size());
-        posibleCount2.resize(code1.size());
+        }
+        
+
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            posibleCounts[textIdx].resize(codes[textIdx].size());
+        }
+
+        typeMasks.resize(tableBig.size());
+        for (int i = 0; i < 256 * 256 * 256; ++i) {
+            triplet<uint> &typeMask = typeMasks[i];
+
+            for (auto triplet : tableBig[i]) {
+                for (int textIdx = 0; textIdx < 3; ++textIdx) {
+                    if (IsLower(triplet.val[textIdx])) {
+                        typeMask.val[textIdx] |= 0x1;
+                    }
+                    else if (IsUpper(triplet.val[textIdx])) {
+                        typeMask.val[textIdx] |= 0x2;
+                    }
+                    else {
+                        typeMask.val[textIdx] |= 0x4;
+                    }
+                }
+            }
+        }
+        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+            posibleCounts[textIdx].resize(codes[textIdx].size());
+        }
     }
 
 public:
     int test() {
-        setlocale(LC_ALL, "Russian");
 
         init();
+        /*{
+            FILE* out = fopen("./res1.txt", "wb");
+            fwrite(text1.data(), sizeof(uchar), text1.size(), out);
+            fflush(out);
+            fclose(out);
+        }
+        {
+            FILE* out = fopen("./res2.txt", "wb");
+            fwrite(text2.data(), sizeof(uchar), text2.size(), out);
+            fflush(out);
+            fclose(out);
+        }
+        {
+            std::vector<uchar> key1;
+            key1.resize(code1.size());
+            for (int i = 0; i < code1.size(); ++i) {
+                key1[i] = code1[i] ^ text1[i];
+            }
+            key1 = macaron::Base64::Encode(key1);
+            FILE* out = fopen("./key1.txt", "wb");
+            fwrite(key1.data(), sizeof(uchar), key1.size(), out);
+            fflush(out);
+            fclose(out);
+        }
+        {
+            std::vector<uchar> key2;
+            key2.resize(code1.size());
+            for (int i = 0; i < code1.size(); ++i) {
+                key2[i] = code1[i] ^ text2[i];
+            }
+            key2 = macaron::Base64::Encode(key2);
+            FILE* out = fopen("./key2.txt", "wb");
+            fwrite(key2.data(), sizeof(uchar), key2.size(), out);
+            fflush(out);
+            fclose(out);
+        }*/
 
         bool needRefresh = true;
         bool needRecalc = true;
@@ -605,7 +773,7 @@ public:
                 system("cls");
                 int windowStartPrev = windowStart;
                 windowStart = MAX(pos / windowSize * windowSize, 0);
-                windowEnd = MIN(pos / windowSize * windowSize + windowSize, helper.size() - 1);
+                windowEnd = MIN(pos / windowSize * windowSize + windowSize, codes[0].size() - 1);
                 if (needRecalc || windowStart != windowStartPrev) {
                     recalcPosibleCount(windowStart, windowEnd);
                     needRecalc = false;
@@ -614,8 +782,8 @@ public:
                 needRefresh = false;
             }
 
-            uchar cross = helper[pos];
-            const auto& vars = table[cross];
+            uint cross = helpers[0][pos] + 256 * (helpers[1][pos] + 256 * helpers[2][pos]);
+            const auto& vars = tableBig[cross];
 
             int res;
 
@@ -646,36 +814,85 @@ public:
                     int c;
                     while ((c = getchar()) != '\n' && c != EOF) {}
                 }
+                printf("Which triplet?\n");
                 int ret = scanf("%d", &res);
                 if (ret > 0) {
                     if (res < vars.size()) {
-                        text1[pos] = vars[res].first;
-                        text2[pos] = vars[res].second;
+                        for (int textIdx = 0; textIdx < 3; ++textIdx) {
+                            texts[textIdx][pos] = vars[res].val[textIdx];
+                        }
+                        needRecalc = true;
                     }
-                    else if (res - vars.size() < vars.size()) {
-                        text2[pos] = vars[res - vars.size()].first;
-                        text1[pos] = vars[res - vars.size()].second;
-                    }
-                    needRecalc = true;
                 }
                 needRefresh = true;
             }
+            if (GetKeyState(VK_SUBTRACT) & 0x8000)
+            {
+                {
+                    FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+                    int c;
+                    while ((c = getchar()) != '\n' && c != EOF) {}
+                }
+                for (int textIdx = 0; textIdx < 3; ++textIdx) {
+                    texts[textIdx][pos] = '*';
+                }
+                needRecalc = true;
+                needRefresh = true;
+            }
+            if (GetKeyState(VK_F5) & 0x8000)
+            {
+                {
+                    FILE* out = fopen("./checkPoint0.txt", "wb");
+
+                    fwrite(texts[0].data(), sizeof(uchar), texts[0].size(), out);
+                    fflush(out);
+                    fclose(out);
+                }
+                {
+                    FILE* out = fopen("./checkPoint1.txt", "wb");
+
+                    fwrite(texts[1].data(), sizeof(uchar), texts[1].size(), out);
+                    fflush(out);
+                    fclose(out);
+                }
+                {
+                    FILE* out = fopen("./checkPoint2.txt", "wb");
+
+                    fwrite(texts[2].data(), sizeof(uchar), texts[2].size(), out);
+                    fflush(out);
+                    fclose(out);
+                }
+            }
             if (GetKeyState(VK_SPACE) & 0x8000)
             {
-                std::vector<uchar> tmp1, tmp2;
-                tmp1.resize(100);
-                tmp2.resize(100);
+                std::vector<uchar> tmps[3];
+                for (int textIdx = 0; textIdx < 3; ++textIdx) {
+                    tmps[textIdx].resize(100);
+                }
 
-                std::vector<WordRecord> words;
-                int count = printRec(&words, true, isCapsLock, 100, tmp1.data(), tmp2.data(), 0, 1, isControl ? text2 : text1, pos);
+                int mainTextIdx = -1;
+                int count = 0;
+                std::vector<WordRecord> wordsList;
+                {
+                    FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+                    int c;
+                    while ((c = getchar()) != '\n' && c != EOF) {}
+                }
+                printf("Which text?\n");
+                int ret = scanf("%d", &mainTextIdx);
+                if (ret > 0) {
+                    count = printRec(&wordsList, true, isCapsLock, 100, tmps, 0, 1, mainTextIdx, pos);
+                }
                 printf("%d\n", count);
 
-                std::sort(words.begin(), words.end(), [](const WordRecord& a, const WordRecord& b) {return (a.score + a.len) > (b.score + b.len); });
+                std::sort(wordsList.begin(), wordsList.end(), [](const WordRecord& a, const WordRecord& b) {return (a.score + a.len) > (b.score + b.len); });
 
-                for (uint i = 0; i < words.size(); ++i) {
-                    printf("%d: %f\n", i, words[i].score);
-                    printf("%.*s\n", words[i].len, words[i].word.data());
-                    printf("%.*s\n", words[i].len, words[i].mirror.data());
+                for (uint i = 0; i < wordsList.size(); ++i) {
+                    printf("%d: %f\n", i, wordsList[i].score);
+                    for (int textIdx = 0; textIdx < 3; ++textIdx) {
+                        tmps[textIdx].resize(100);
+                        printf("%.*s\n", wordsList[i].len, wordsList[i].words[textIdx].data());
+                    }
                     printf("\n");
                 }
                 int i = -1;
@@ -684,20 +901,21 @@ public:
                     int c;
                     while ((c = getchar()) != '\n' && c != EOF) {}
                 }
-                int ret = scanf("%d", &i);
+                printf("Which word?\n");
+                ret = scanf("%d", &i);
                 if (ret > 0) {
-                    auto& word1 = isControl ? words[i].mirror : words[i].word;
-                    auto& word2 = isControl ? words[i].word : words[i].mirror;
-                    for (uint j = 0; j < words[i].len; ++j) {
-                        text1[pos + j] = word1[j];
-                        text2[pos + j] = word2[j];
+                    auto& word = wordsList[i];
+                    for (int textIdx = 0; textIdx < 3; ++textIdx) {
+                        for (int j = 0; j < word.len; ++j) {
+                            texts[textIdx][pos + j] = word.words[textIdx][j];
+                        }
                     }
                     needRecalc = true;
                 }
                 needRefresh = true;
             }
 
-            pos = MAX(MIN(pos, helper.size() - 1), 0);
+            pos = MAX((pos + codes[0].size()) % codes[0].size(), 0);
             std::this_thread::sleep_for(std::chrono::milliseconds{ 10 });
         }
 
@@ -709,14 +927,46 @@ public:
 
 int select(const char* filename) {
 
-    FILE* in = fopen(filename, "rb");
-    fseek(in, 0L, SEEK_END);
-    long sz = ftell(in);
-    fseek(in, 0L, SEEK_SET);
     std::vector<uchar> text;
-    text.resize(sz);
-    fread(text.data(), sizeof(uchar), sz, in);
-    fclose(in);
+    {
+        FILE* in = fopen(filename, "rb");
+        fseek(in, 0L, SEEK_END);
+        long sz = ftell(in);
+        fseek(in, 0L, SEEK_SET);
+        text.resize(sz);
+        fread(text.data(), sizeof(uchar), sz, in);
+        fclose(in);
+    }
+    {
+        FILE* in = fopen("./checkPoint0.txt", "rb");
+        fseek(in, 0L, SEEK_END);
+        long sz = ftell(in);
+        fseek(in, 0L, SEEK_SET);
+        long offset = text.size();
+        text.resize(offset + sz);
+        fread(text.data() + offset, sizeof(uchar), sz, in);
+        fclose(in);
+    }
+    {
+        FILE* in = fopen("./checkPoint1.txt", "rb");
+        fseek(in, 0L, SEEK_END);
+        long sz = ftell(in);
+        fseek(in, 0L, SEEK_SET);
+        long offset = text.size();
+        text.resize(offset + sz);
+        fread(text.data() + offset, sizeof(uchar), sz, in);
+        fclose(in);
+    }
+    {
+        FILE* in = fopen("./checkPoint2.txt", "rb");
+        fseek(in, 0L, SEEK_END);
+        long sz = ftell(in);
+        fseek(in, 0L, SEEK_SET);
+        long offset = text.size();
+        text.resize(offset + sz);
+        fread(text.data() + offset, sizeof(uchar), sz, in);
+        fclose(in);
+    }
 
     std::list<std::pair<uchar*, uint>> words;
 
@@ -728,7 +978,7 @@ int select(const char* filename) {
     trigrams.resize(26 * 26 * 26);
 
     int alphaCounter = 0;
-    for (uint i = 0; i < sz; ++i) {
+    for (uint i = 0; i < text.size(); ++i) {
         if (IsAlpha(text[i])) {
             alphaCounter++;
             if (alphaCounter >= 2) {
@@ -850,7 +1100,7 @@ int buildTree() {
             }
         }
         int endPos = nodes[pos].down;
-        while (endPos >= 0) {
+        while (endPos >= 0 && nodes[endPos].next >= 0) {
             if (nodes[endPos].c == '\0') {
                 nodes[endPos].count++;
                 break;
@@ -861,6 +1111,11 @@ int buildTree() {
             int newPos = nodes.size();
             nodes.push_back({ '\0', -1, -1, 1 });
             nodes[pos].down = newPos;
+        }
+        else if (nodes[endPos].c != '\0') {
+            int newPos = nodes.size();
+            nodes.push_back({ '\0', -1, -1, 1 });
+            nodes[endPos].next = newPos;
         }
     }
 
