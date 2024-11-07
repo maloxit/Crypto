@@ -24,6 +24,31 @@ using uint64 = unsigned long long;
 using uchar = unsigned char;
 using StringFilter = float (*)(uchar* in, int len);
 
+
+
+template<typename T>
+static void ReadFullFile(const char* fileName, std::vector<T>& data)
+{
+    FILE* in = fopen(fileName, "rb");
+    fseek(in, 0L, SEEK_END);
+    long sz = ftell(in) / sizeof(T);
+    fseek(in, 0L, SEEK_SET);
+
+    data.resize(sz);
+
+    fread(data.data(), sizeof(T), sz, in);
+    fclose(in);
+}
+
+template<typename T>
+static void WriteFullFile(const char* fileName, const std::vector<T>& data)
+{
+    FILE* out = fopen(fileName, "wb");
+    fwrite(data.data(), sizeof(T), data.size(), out);
+    fflush(out);
+    fclose(out);
+}
+
 template<typename T>
 struct triplet
 {
@@ -455,26 +480,8 @@ class Test
     }
 
     void init() {
-        {
-            FILE* in = fopen("./tree.bin", "rb");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in) / sizeof(Node);
-            fseek(in, 0L, SEEK_SET);
-            nodes.resize(sz);
-
-            fread(nodes.data(), sizeof(Node), sz, in);
-            fclose(in);
-        }
-        {
-            FILE* in = fopen("./treeRev.bin", "rb");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in) / sizeof(Node);
-            fseek(in, 0L, SEEK_SET);
-            nodesRev.resize(sz);
-
-            fread(nodesRev.data(), sizeof(Node), sz, in);
-            fclose(in);
-        }
+        ReadFullFile("./tree.bin", nodes);
+        ReadFullFile("./treeRev.bin", nodesRev);
         {
             FILE* in = fopen("./charPointers.bin", "rb");
             for (int i = 0; i < 26; ++i) {
@@ -485,60 +492,21 @@ class Test
             }
             fclose(in);
         }
+        ReadFullFile("./bigrams.bin", bigramsF);
+        ReadFullFile("./trigrams.bin", trigramsF);
         {
-            FILE* in = fopen("./bigrams.bin", "rb");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in) / sizeof(float);
-            fseek(in, 0L, SEEK_SET);
-            bigramsF.resize(sz);
-
-            fread(bigramsF.data(), sizeof(float), sz, in);
-            fclose(in);
-        }
-        {
-            FILE* in = fopen("./trigrams.bin", "rb");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in) / sizeof(float);
-            fseek(in, 0L, SEEK_SET);
-            trigramsF.resize(sz);
-
-            fread(trigramsF.data(), sizeof(float), sz, in);
-            fclose(in);
-        }
-        {
-            FILE* in = fopen("./input1.txt", "r");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in);
-            fseek(in, 0L, SEEK_SET);
             std::vector<uchar> tmp;
-            tmp.resize(sz);
-
-            fread(tmp.data(), sizeof(uchar), sz, in);
-            fclose(in);
+            ReadFullFile("./input1.txt", tmp);
             macaron::Base64::Decode(tmp, codes[0]);
         }
         {
-            FILE* in = fopen("./input2.txt", "r");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in);
-            fseek(in, 0L, SEEK_SET);
             std::vector<uchar> tmp;
-            tmp.resize(sz);
-
-            fread(tmp.data(), sizeof(uchar), sz, in);
-            fclose(in);
+            ReadFullFile("./input2.txt", tmp);
             macaron::Base64::Decode(tmp, codes[1]);
         }
         {
-            FILE* in = fopen("./input3.txt", "r");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in);
-            fseek(in, 0L, SEEK_SET);
             std::vector<uchar> tmp;
-            tmp.resize(sz);
-
-            fread(tmp.data(), sizeof(uchar), sz, in);
-            fclose(in);
+            ReadFullFile("./input3.txt", tmp);
             macaron::Base64::Decode(tmp, codes[2]);
         }
 
@@ -569,86 +537,13 @@ class Test
                 helpers[textIdx][i] = codes[textIdx][i] ^ codes[(textIdx + 1) % 3][i];
             }
         }
-        if (false) {
-            printf("\n");
-            for (int i = 0; i < 256; ++i) {
-                printf("%02X = %2d: ", i, (int)table[i].size());
-                for (auto pair : table[i]) {
-                    printf("(%c,%c)", pair.first, pair.second);
-                }
-                printf("\n");
-            }
-            getchar();
-            printf("\n");
-            for (int i = 0; i < 256 * 256 * 256; ++i) {
-                if (tableBig[i].size() > 0) {
-                    printf("%06X = %6d: ", i, (int)tableBig[i].size());
-                    for (auto triplet : tableBig[i]) {
-                        printf("(%c,%c,%c)", triplet.val[0], triplet.val[1], triplet.val[2]);
-                    }
-                    printf("\n");
-                }
-            }
-            getchar();
-        }
+
+        uchar maskingChars[] = " .,-;:?!\'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        static_assert(sizeof(maskingChars) - 1 < 64, "");
         for (int i = 0; i < 256; ++i) masks[i] = 0;
+        for (int i = 0; i < sizeof(maskingChars) - 1; ++i)
         {
-            masks['a'] = 0x0000000000000001;
-            masks['b'] = 0x0000000000000002;
-            masks['c'] = 0x0000000000000004;
-            masks['d'] = 0x0000000000000008;
-            masks['e'] = 0x0000000000000010;
-            masks['f'] = 0x0000000000000020;
-            masks['g'] = 0x0000000000000040;
-            masks['h'] = 0x0000000000000080;
-            masks['i'] = 0x0000000000000100;
-            masks['j'] = 0x0000000000000200;
-            masks['k'] = 0x0000000000000400;
-            masks['l'] = 0x0000000000000800;
-            masks['m'] = 0x0000000000001000;
-            masks['n'] = 0x0000000000002000;
-            masks['o'] = 0x0000000000004000;
-            masks['p'] = 0x0000000000008000;
-            masks['q'] = 0x0000000000010000;
-            masks['r'] = 0x0000000000020000;
-            masks['s'] = 0x0000000000040000;
-            masks['t'] = 0x0000000000080000;
-            masks['u'] = 0x0000000000100000;
-            masks['v'] = 0x0000000000200000;
-            masks['w'] = 0x0000000000400000;
-            masks['x'] = 0x0000000000800000;
-            masks['y'] = 0x0000000001000000;
-            masks['z'] = 0x0000000002000000;
-            masks[' '] = 0x0000000004000000;
-            masks['-'] = 0x0000000008000000;
-            masks[','] = 0x0000000010000000;
-            masks['.'] = 0x0000000020000000;
-            masks['A'] = 0x0000000100000000;
-            masks['B'] = 0x0000000200000000;
-            masks['C'] = 0x0000000400000000;
-            masks['D'] = 0x0000000800000000;
-            masks['E'] = 0x0000001000000000;
-            masks['F'] = 0x0000002000000000;
-            masks['G'] = 0x0000004000000000;
-            masks['H'] = 0x0000008000000000;
-            masks['I'] = 0x0000010000000000;
-            masks['J'] = 0x0000020000000000;
-            masks['K'] = 0x0000040000000000;
-            masks['L'] = 0x0000080000000000;
-            masks['M'] = 0x0000100000000000;
-            masks['N'] = 0x0000200000000000;
-            masks['O'] = 0x0000400000000000;
-            masks['P'] = 0x0000800000000000;
-            masks['Q'] = 0x0001000000000000;
-            masks['R'] = 0x0002000000000000;
-            masks['S'] = 0x0004000000000000;
-            masks['T'] = 0x0008000000000000;
-            masks['U'] = 0x0010000000000000;
-            masks['V'] = 0x0020000000000000;
-            masks['W'] = 0x0040000000000000;
-            masks['X'] = 0x0080000000000000;
-            masks['Y'] = 0x0100000000000000;
-            masks['Z'] = 0x0200000000000000;
+            masks[maskingChars[i]] = 0x0000000000000001LL << i;
         }
         for (int textIdx = 0; textIdx < 3; ++textIdx) {
             allowedChars[textIdx].resize(codes[textIdx].size());
@@ -675,7 +570,7 @@ class Test
 
         std::vector<uchar> checkPoint;
         {
-            FILE* in = fopen("./checkPoint2.txt", "rb");
+            FILE* in = fopen("./checkPoint0.txt", "rb");
             fseek(in, 0L, SEEK_END);
             long sz = ftell(in);
             fseek(in, 0L, SEEK_SET);
@@ -684,12 +579,13 @@ class Test
             fread(checkPoint.data(), sizeof(uchar), sz, in);
             fclose(in);
         }
+        int sel = 0;
         // Load chackpoint
         for (int i = 0; i < checkPoint.size() && i < codes[0].size(); ++i) {
             if (checkPoint[i] != '*') {
-                texts[2][i] = checkPoint[i];
-                texts[0][i] = checkPoint[i] ^ helpers[2][i];
-                texts[1][i] = checkPoint[i] ^ helpers[1][i];
+                texts[sel][i] = checkPoint[i];
+                texts[(sel + 1) % 3][i] = checkPoint[i] ^ helpers[sel][i];
+                texts[(sel + 2) % 3][i] = checkPoint[i] ^ helpers[(sel + 2) % 3][i];
             }
         }
         
@@ -725,46 +621,10 @@ public:
     int test() {
 
         init();
-        /*{
-            FILE* out = fopen("./res1.txt", "wb");
-            fwrite(text1.data(), sizeof(uchar), text1.size(), out);
-            fflush(out);
-            fclose(out);
-        }
-        {
-            FILE* out = fopen("./res2.txt", "wb");
-            fwrite(text2.data(), sizeof(uchar), text2.size(), out);
-            fflush(out);
-            fclose(out);
-        }
-        {
-            std::vector<uchar> key1;
-            key1.resize(code1.size());
-            for (int i = 0; i < code1.size(); ++i) {
-                key1[i] = code1[i] ^ text1[i];
-            }
-            key1 = macaron::Base64::Encode(key1);
-            FILE* out = fopen("./key1.txt", "wb");
-            fwrite(key1.data(), sizeof(uchar), key1.size(), out);
-            fflush(out);
-            fclose(out);
-        }
-        {
-            std::vector<uchar> key2;
-            key2.resize(code1.size());
-            for (int i = 0; i < code1.size(); ++i) {
-                key2[i] = code1[i] ^ text2[i];
-            }
-            key2 = macaron::Base64::Encode(key2);
-            FILE* out = fopen("./key2.txt", "wb");
-            fwrite(key2.data(), sizeof(uchar), key2.size(), out);
-            fflush(out);
-            fclose(out);
-        }*/
 
         bool needRefresh = true;
         bool needRecalc = true;
-        int pos = 0;
+        int pos = 9000;
         int windowSize = 25;
         int windowStart = 0;
         int windowEnd = windowSize;
@@ -841,26 +701,18 @@ public:
             }
             if (GetKeyState(VK_F5) & 0x8000)
             {
-                {
-                    FILE* out = fopen("./checkPoint0.txt", "wb");
+                WriteFullFile("./checkPoint0.txt", texts[0]);
+                WriteFullFile("./checkPoint1.txt", texts[1]);
+                WriteFullFile("./checkPoint2.txt", texts[2]);
 
-                    fwrite(texts[0].data(), sizeof(uchar), texts[0].size(), out);
-                    fflush(out);
-                    fclose(out);
-                }
                 {
-                    FILE* out = fopen("./checkPoint1.txt", "wb");
-
-                    fwrite(texts[1].data(), sizeof(uchar), texts[1].size(), out);
-                    fflush(out);
-                    fclose(out);
-                }
-                {
-                    FILE* out = fopen("./checkPoint2.txt", "wb");
-
-                    fwrite(texts[2].data(), sizeof(uchar), texts[2].size(), out);
-                    fflush(out);
-                    fclose(out);
+                    std::vector<uchar> key;
+                    key.resize(codes[0].size());
+                    for (int i = 0; i < codes[0].size(); ++i) {
+                        key[i] = codes[0][i] ^ texts[0][i];
+                    }
+                    key = macaron::Base64::Encode(key);
+                    WriteFullFile("./key.txt", key);
                 }
             }
             if (GetKeyState(VK_SPACE) & 0x8000)
@@ -928,15 +780,7 @@ public:
 int select(const char* filename) {
 
     std::vector<uchar> text;
-    {
-        FILE* in = fopen(filename, "rb");
-        fseek(in, 0L, SEEK_END);
-        long sz = ftell(in);
-        fseek(in, 0L, SEEK_SET);
-        text.resize(sz);
-        fread(text.data(), sizeof(uchar), sz, in);
-        fclose(in);
-    }
+    ReadFullFile(filename, text);
     {
         FILE* in = fopen("./checkPoint0.txt", "rb");
         fseek(in, 0L, SEEK_END);
@@ -1001,30 +845,22 @@ int select(const char* filename) {
     }
 
     {
-        FILE* out = fopen("./bigrams.bin", "wb");
         std::vector<float> bigramsF;
         float avrg = bigramsTotal / (float)(bigrams.size());
         bigramsF.resize(bigrams.size());
         for (uint biIdx = 0; biIdx < bigrams.size(); ++biIdx) {
             bigramsF[biIdx] = bigrams[biIdx] / avrg;
         }
-        fwrite(bigramsF.data(), sizeof(float), bigramsF.size(), out);
-
-        fflush(out);
-        fclose(out);
+        WriteFullFile("./bigrams.bin", bigramsF);
     }
     {
-        FILE* out = fopen("./trigrams.bin", "wb");
         std::vector<float> trigramsF;
         float avrg = trigramsTotal / (float)(trigrams.size());
         trigramsF.resize(trigrams.size());
         for (uint triIdx = 0; triIdx < trigrams.size(); ++triIdx) {
             trigramsF[triIdx] = trigrams[triIdx] / avrg;
         }
-        fwrite(trigramsF.data(), sizeof(float), trigramsF.size(), out);
-
-        fflush(out);
-        fclose(out);
+        WriteFullFile("./trigrams.bin", trigramsF);
     }
     {
         FILE* out = fopen("./out.txt", "w");
@@ -1043,16 +879,7 @@ int select(const char* filename) {
 int buildTree() {
     std::vector<uchar> textOrd;
     std::list<std::pair<uchar*, uint>> words;
-    {
-        FILE* in = fopen("./out.txt", "rb");
-        fseek(in, 0L, SEEK_END);
-        long sz = ftell(in);
-        fseek(in, 0L, SEEK_SET);
-        textOrd.resize(sz);
-        int read = fread(textOrd.data(), sizeof(uchar), sz, in);
-        fflush(in);
-        fclose(in);
-    }
+    ReadFullFile("./out.txt", textOrd);
 
     int wordStart = 0;
     while (wordStart < textOrd.size()) {
@@ -1118,24 +945,18 @@ int buildTree() {
             nodes[endPos].next = newPos;
         }
     }
+    WriteFullFile("./tree.bin", nodes);
+    {
+        FILE* out = fopen("./charPointers.bin", "wb");
 
-
-
-    FILE* out = fopen("./tree.bin", "wb");
-    fwrite(nodes.data(), sizeof(Node), nodes.size(), out);
-    fflush(out);
-    fclose(out);
-
-    out = fopen("./charPointers.bin", "wb");
-
-    for (int i = 0; i < 26; ++i) {
-        int size = charPointers[i].size();
-        fwrite(&size, sizeof(int), 1, out);
-        fwrite(charPointers[i].data(), sizeof(int), size, out);
+        for (int i = 0; i < 26; ++i) {
+            int size = charPointers[i].size();
+            fwrite(&size, sizeof(int), 1, out);
+            fwrite(charPointers[i].data(), sizeof(int), size, out);
+        }
+        fflush(out);
+        fclose(out);
     }
-    fflush(out);
-    fclose(out);
-
     nodes.clear();
     nodes.push_back({});
 
@@ -1178,15 +999,7 @@ int buildTree() {
             nodes[pos].down = newPos;
         }
     }
-
-
-
-    out = fopen("./treeRev.bin", "wb");
-    fwrite(nodes.data(), sizeof(Node), nodes.size(), out);
-    fflush(out);
-    fclose(out);
-
-
+    WriteFullFile("./treeRev.bin", nodes);
     return 0;
 }
 
