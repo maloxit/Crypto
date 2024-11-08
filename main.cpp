@@ -479,6 +479,38 @@ class Test
         printf("\n");
     }
 
+    void loadCheckPoint(int i) {
+        char checkPointName[] = "./checkPoint0.txt";
+
+        sprintf(checkPointName, "./checkPoint%d.txt", i);
+
+        std::vector<uchar> checkPoint;
+        {
+            FILE* in = fopen(checkPointName, "rb");
+            fseek(in, 0L, SEEK_END);
+            long sz = ftell(in);
+            fseek(in, 0L, SEEK_SET);
+            checkPoint.resize(sz);
+
+            fread(checkPoint.data(), sizeof(uchar), sz, in);
+            fclose(in);
+        }
+        int sel = 0;
+        // Load chackpoint
+        for (int i = 0; i < checkPoint.size() && i < codes[0].size(); ++i) {
+            if (checkPoint[i] != '*') {
+                texts[sel][i] = checkPoint[i];
+                texts[(sel + 1) % 3][i] = checkPoint[i] ^ helpers[sel][i];
+                texts[(sel + 2) % 3][i] = checkPoint[i] ^ helpers[(sel + 2) % 3][i];
+            }
+            else {
+                texts[sel][i] = '*';
+                texts[(sel + 1) % 3][i] = '*';
+                texts[(sel + 2) % 3][i] = '*';
+            }
+        }
+    }
+
     void init() {
         ReadFullFile("./tree.bin", nodes);
         ReadFullFile("./treeRev.bin", nodesRev);
@@ -568,28 +600,6 @@ class Test
             }
         }
 
-        std::vector<uchar> checkPoint;
-        {
-            FILE* in = fopen("./checkPoint0.txt", "rb");
-            fseek(in, 0L, SEEK_END);
-            long sz = ftell(in);
-            fseek(in, 0L, SEEK_SET);
-            checkPoint.resize(sz);
-
-            fread(checkPoint.data(), sizeof(uchar), sz, in);
-            fclose(in);
-        }
-        int sel = 0;
-        // Load chackpoint
-        for (int i = 0; i < checkPoint.size() && i < codes[0].size(); ++i) {
-            if (checkPoint[i] != '*') {
-                texts[sel][i] = checkPoint[i];
-                texts[(sel + 1) % 3][i] = checkPoint[i] ^ helpers[sel][i];
-                texts[(sel + 2) % 3][i] = checkPoint[i] ^ helpers[(sel + 2) % 3][i];
-            }
-        }
-        
-
         for (int textIdx = 0; textIdx < 3; ++textIdx) {
             posibleCounts[textIdx].resize(codes[textIdx].size());
         }
@@ -622,9 +632,10 @@ public:
 
         init();
 
+        loadCheckPoint(0);
         bool needRefresh = true;
         bool needRecalc = true;
-        int pos = 9000;
+        int pos = 0;
         int windowSize = 25;
         int windowStart = 0;
         int windowEnd = windowSize;
@@ -702,6 +713,9 @@ public:
             if (GetKeyState(VK_F5) & 0x8000)
             {
                 WriteFullFile("./checkPoint0.txt", texts[0]);
+
+                loadCheckPoint(0);
+
                 WriteFullFile("./checkPoint1.txt", texts[1]);
                 WriteFullFile("./checkPoint2.txt", texts[2]);
 
@@ -714,6 +728,39 @@ public:
                     key = macaron::Base64::Encode(key);
                     WriteFullFile("./key.txt", key);
                 }
+                needRecalc = true;
+                needRefresh = true;
+            }
+            if (GetKeyState(VK_F6) & 0x8000)
+            {
+                uchar ch = '*';
+                for (int i = pos; i < texts[0].size(); ++i) {
+                    uchar tmp = texts[0][i];
+                    texts[0][i] = ch;
+                    ch = tmp;
+                }
+                WriteFullFile("./checkPoint0.txt", texts[0]);
+
+                loadCheckPoint(0);
+
+                WriteFullFile("./checkPoint1.txt", texts[1]);
+                WriteFullFile("./checkPoint2.txt", texts[2]);
+                needRecalc = true;
+                needRefresh = true;
+            }
+            if (GetKeyState(VK_F7) & 0x8000)
+            {
+                for (int i = pos; i + 1 < texts[0].size(); ++i) {
+                    texts[0][i] = texts[0][i + 1];
+                }
+                WriteFullFile("./checkPoint0.txt", texts[0]);
+
+                loadCheckPoint(0);
+
+                WriteFullFile("./checkPoint1.txt", texts[1]);
+                WriteFullFile("./checkPoint2.txt", texts[2]);
+                needRecalc = true;
+                needRefresh = true;
             }
             if (GetKeyState(VK_SPACE) & 0x8000)
             {
